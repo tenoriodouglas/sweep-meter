@@ -1,0 +1,193 @@
+name: Android CI/CD
+
+# - Every push/PR: format check, unit tests, lint, debug build.
+# - Push to main: debug APK published to a rolling release (fixed download link).
+# - Tag v* or manual run: signed AAB uploaded to Google Play.
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+  pull_request:
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+  workflow_dispatch:
+    inputs:
+      track:
+        description: "Google Play track"
+        required: true
+        default: internal
+        type: choice
+        options: [internal, alpha, beta, production]
+      status:
+        description: "Use 'draft' while the app has never been published on Play; 'completed' afterwards."
+        required: true
+        default: draft
+        type: choice
+        options: [draft, completed]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  VERSION_CODE: ${{ github.run_number }}
+
+jobs:
+  build:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write # rolling release on main
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Android SDK packages
+        run: .github/scripts/setup-android-sdk.sh
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      - name: Format check
+        run: ./gradlew spotlessCheck
+
+      - name: Unit tests
+        run: ./gradlew testDebugUnitTest
+
+      - name: Lint
+        run: ./gradlew lintDebug
+
+      - name: Assemble debug APK
+        run: ./gradlew :app:assembleDebug
+
+      - name: Upload reports
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: reports
+          path: "**/build/reports"
+          retention-days: 5
+
+      # Stable file name + fixed tag: the download link never changes and releases don't pile up.
+      - name: Stage debug APK
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          mkdir -p release-apk
+          cp app/build/outputs/apk/debug/app-debug.apk release-apk/sweep-meter-latest-debug.apk
+          version_name=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts | head -1)
+          jq -n \
+            --argjson versionCode "$VERSION_CODE" \
+            --arg versionName "$version_name" \
+            --arg apkUrl "https://github.com/${{ github.repository }}/releases/download/apk-latest/sweep-meter-latest-debug.apk" \
+            --arg notes "$(git log -1 --pretty=%s)" \
+            '{versionCode: $versionCode, versionName: $versionName, apkUrl: $apkUrl, notes: $notes}' \
+            > release-apk/latest.json
+          cat release-apk/latest.json
+
+      - name: Publish rolling release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: apk-latest
+          name: Sweep Meter — última APK (debug)
+          body: >
+            APK de teste gerada automaticamente a partir do último commit da main.
+            Instala lado a lado com a versão da Play Store (pacote app.sweepmeter.debug).
+          prerelease: true
+          files: |
+            release-apk/sweep-meter-latest-debug.apk
+            release-apk/latest.json
+
+      # The action creates the tag but never moves it; an old anchor keeps stale history reachable.
+      - name: Move apk-latest tag to current commit
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api -X PATCH "repos/${{ github.repository }}/git/refs/tags/apk-latest" \
+            -f sha="${{ github.sha }}" -F force=true > /dev/null
+
+  deploy:
+    name: Release to Google Play
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    concurrency:
+      group: play-store-deploy
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Android SDK packages
+        run: .github/scripts/setup-android-sdk.sh
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      - name: Verify release secrets
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          missing=0
+          for name in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD PLAY_SERVICE_ACCOUNT_JSON; do
+            if [ -z "${!name}" ]; then echo "::error::Missing secret $name"; missing=1; fi
+          done
+          exit $missing
+
+      - name: Decode signing keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.jks"
+
+      - name: Build signed AAB
+        env:
+          KEYSTORE_FILE: ${{ runner.temp }}/release.jks
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: ./gradlew :app:bundleRelease
+
+      # Always available for manual download, even if the Play upload below can't run yet.
+      - name: Upload signed AAB
+        uses: actions/upload-artifact@v7
+        with:
+          name: sweep-meter-release-aab
+          path: |
+            app/build/outputs/bundle/release/app-release.aab
+            app/build/outputs/mapping/release/mapping.txt
+          if-no-files-found: error
+          retention-days: 5
+
+      - name: Upload to Google Play
+        uses: r0adkll/upload-google-play@v1
+        env:
+          NODE_OPTIONS: --no-deprecation
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: app.sweepmeter
+          releaseFiles: app/build/outputs/bundle/release/app-release.aab
+          mappingFile: app/build/outputs/mapping/release/mapping.txt
+          track: ${{ inputs.track || 'internal' }}
+          # Tags roll out immediately; manual runs default to draft (required for a never-published app).
+          status: ${{ inputs.status || 'completed' }}
+
+      - name: Remove keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/release.jks"

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Sweep Meter</string>
+    <string name="export_title">Exportar medição</string>
+    <string name="mic_denied">Sem permissão do microfone não é possível medir.</string>
+</resources>

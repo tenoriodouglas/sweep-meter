@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Frequency response curve with a resonant peak -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:pathData="M30,66 L42,64 C46,63 48,58 50,48 C51,40 53,38 54,38 C55,38 57,40 58,48 C60,58 62,63 66,64 L78,66"
+        android:strokeColor="@color/icon_foreground"
+        android:strokeWidth="4"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000" />
+    <path
+        android:pathData="M30,74 L78,74"
+        android:strokeColor="@color/icon_foreground"
+        android:strokeAlpha="0.4"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000" />
+</vector>
