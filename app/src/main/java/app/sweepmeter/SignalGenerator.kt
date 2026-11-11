@@ -1,19 +1,18 @@
 package app.sweepmeter
 
-import android.media.AudioAttributes
-import android.media.AudioFormat
 import android.media.AudioTrack
 import kotlin.concurrent.thread
 import kotlin.math.PI
 import kotlin.math.exp
-import kotlin.math.max
 import kotlin.math.sin
 
 /**
- * Continuous sine generator with click-free gain/frequency changes and an optional
- * slow frequency wobble around the target, used to excite a resonance.
+ * Continuous signal generator: click-free gain/frequency changes and an optional slow
+ * frequency wobble around the target, used to excite resonances or drive an RTA.
  */
-class TonePlayer(private val sampleRate: Int) {
+class SignalGenerator(private val sampleRate: Int, private val devices: AudioDevices) {
+
+    @Volatile private var waveform = Oscillator.Waveform.SINE
 
     @Volatile private var targetFreq = 440.0
 
@@ -27,15 +26,16 @@ class TonePlayer(private val sampleRate: Int) {
 
     val isPlaying: Boolean get() = running
 
-    /** Starts or retunes the tone. [wobble] is the fractional deviation (0.01 = ±1%). */
+    /** Starts or retunes the output. [wobble] is the fractional deviation (0.01 = ±1%). */
     @Synchronized
-    fun play(frequency: Double, gain: Double, wobble: Double) {
+    fun play(wave: Oscillator.Waveform, frequency: Double, gain: Double, wobble: Double) {
+        waveform = wave
         targetFreq = frequency.coerceIn(MIN_FREQ, sampleRate * 0.45)
         targetGain = gain.coerceIn(0.0, 1.0)
         wobbleDepth = wobble.coerceIn(0.0, MAX_WOBBLE)
         if (running) return
         running = true
-        worker = thread(name = "tone") { render() }
+        worker = thread(name = "generator") { render() }
     }
 
     /** Fades out and releases the output. */
@@ -47,10 +47,11 @@ class TonePlayer(private val sampleRate: Int) {
     }
 
     private fun render() {
-        val track = createTrack()
+        val track = AudioIo.createTrack(sampleRate, devices.preferredOutput(), CHUNK * 2)
+        val osc = Oscillator(sampleRate)
         val buffer = FloatArray(CHUNK)
         val smooth = 1 - exp(-1.0 / (SMOOTH_SEC * sampleRate))
-        var phase = 0.0
+        val wobbleStep = 2 * PI / (WOBBLE_PERIOD_SEC * sampleRate)
         var wobblePhase = 0.0
         var freq = targetFreq
         var gain = 0.0
@@ -59,14 +60,12 @@ class TonePlayer(private val sampleRate: Int) {
             track.play()
             while (true) {
                 val goalGain = if (running) targetGain else 0.0
+                val wave = waveform
                 for (i in buffer.indices) {
                     gain += (goalGain - gain) * smooth
                     freq += (targetFreq - freq) * smooth
-                    val f = freq * (1 + wobbleDepth * sin(wobblePhase))
-                    buffer[i] = (gain * sin(phase)).toFloat()
-                    phase += 2 * PI * f / sampleRate
-                    if (phase > 2 * PI) phase -= 2 * PI
-                    wobblePhase += 2 * PI / (WOBBLE_PERIOD_SEC * sampleRate)
+                    buffer[i] = (gain * osc.next(wave, freq * (1 + wobbleDepth * sin(wobblePhase)))).toFloat()
+                    wobblePhase += wobbleStep
                     if (wobblePhase > 2 * PI) wobblePhase -= 2 * PI
                 }
                 if (track.write(buffer, 0, buffer.size, AudioTrack.WRITE_BLOCKING) < 0) break
@@ -77,31 +76,6 @@ class TonePlayer(private val sampleRate: Int) {
             track.release()
             running = false
         }
-    }
-
-    private fun createTrack(): AudioTrack {
-        val minBuffer = AudioTrack.getMinBufferSize(
-            sampleRate,
-            AudioFormat.CHANNEL_OUT_MONO,
-            AudioFormat.ENCODING_PCM_FLOAT
-        )
-        return AudioTrack.Builder()
-            .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                    .build()
-            )
-            .setAudioFormat(
-                AudioFormat.Builder()
-                    .setSampleRate(sampleRate)
-                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-                    .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
-                    .build()
-            )
-            .setTransferMode(AudioTrack.MODE_STREAM)
-            .setBufferSizeInBytes(max(minBuffer * 2, CHUNK * Float.SIZE_BYTES * 2))
-            .build()
     }
 
     private companion object {

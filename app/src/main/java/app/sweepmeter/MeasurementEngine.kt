@@ -1,9 +1,6 @@
 package app.sweepmeter
 
-import android.annotation.SuppressLint
 import android.content.Context
-import android.media.AudioAttributes
-import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.AudioTrack
@@ -20,7 +17,7 @@ import kotlin.math.roundToInt
  * Plays a sine sweep through the media output while recording the microphone
  * with the least processed input source available. Analysis happens in the WebView.
  */
-class MeasurementEngine(context: Context) {
+class MeasurementEngine(context: Context, private val devices: AudioDevices) {
 
     data class Params(
         val f1: Double,
@@ -41,6 +38,8 @@ class MeasurementEngine(context: Context) {
 
     private val audioManager = context.getSystemService(AudioManager::class.java)
     private val running = AtomicBoolean(false)
+
+    val isBusy: Boolean get() = running.get()
 
     /** Last capture, served to the WebView as raw little-endian float32. */
     @Volatile
@@ -89,10 +88,9 @@ class MeasurementEngine(context: Context) {
         return true
     }
 
-    @SuppressLint("MissingPermission") // Checked by the caller before start().
     private fun capture(playback: FloatArray, recordLength: Int, sr: Int, listener: Listener): FloatArray {
-        val recorder = createRecorder(sr, inputSource.id)
-        val track = if (playback.isNotEmpty()) createTrack(sr) else null
+        val recorder = AudioIo.createRecorder(sr, inputSource.id, devices.preferredInput())
+        val track = if (playback.isNotEmpty()) AudioIo.createTrack(sr, devices.preferredOutput(), sr / 4) else null
         val recording = FloatArray(recordLength)
         var player: Thread? = null
 
@@ -159,66 +157,10 @@ class MeasurementEngine(context: Context) {
         return out
     }
 
-    @SuppressLint("MissingPermission")
-    private fun createRecorder(sr: Int, sourceId: Int): AudioRecord {
-        val minBuffer = AudioRecord.getMinBufferSize(
-            sr,
-            AudioFormat.CHANNEL_IN_MONO,
-            AudioFormat.ENCODING_PCM_FLOAT
-        )
-        require(minBuffer > 0) { "Microfone não suporta $sr Hz em ponto flutuante" }
-
-        val recorder = AudioRecord.Builder()
-            .setAudioSource(sourceId)
-            .setAudioFormat(
-                AudioFormat.Builder()
-                    .setSampleRate(sr)
-                    .setChannelMask(AudioFormat.CHANNEL_IN_MONO)
-                    .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
-                    .build()
-            )
-            .setBufferSizeInBytes(max(minBuffer * 4, sr * FLOAT_BYTES / 2))
-            .build()
-
-        if (recorder.state != AudioRecord.STATE_INITIALIZED) {
-            recorder.release()
-            error("Falha ao abrir o microfone")
-        }
-        return recorder
-    }
-
-    private fun createTrack(sr: Int): AudioTrack {
-        val minBuffer = AudioTrack.getMinBufferSize(
-            sr,
-            AudioFormat.CHANNEL_OUT_MONO,
-            AudioFormat.ENCODING_PCM_FLOAT
-        )
-        require(minBuffer > 0) { "Saída de áudio não suporta $sr Hz" }
-
-        return AudioTrack.Builder()
-            .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                    .build()
-            )
-            .setAudioFormat(
-                AudioFormat.Builder()
-                    .setSampleRate(sr)
-                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-                    .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
-                    .build()
-            )
-            .setTransferMode(AudioTrack.MODE_STREAM)
-            .setBufferSizeInBytes(max(minBuffer * 2, sr * FLOAT_BYTES / 4))
-            .build()
-    }
-
     private companion object {
         const val DEFAULT_SAMPLE_RATE = 48_000
         const val RECORD_MARGIN_SEC = 1.0
         const val CHUNK = 1024
-        const val FLOAT_BYTES = 4
         const val PROGRESS_INTERVAL_MS = 50L
         const val JOIN_TIMEOUT_MS = 3_000L
     }

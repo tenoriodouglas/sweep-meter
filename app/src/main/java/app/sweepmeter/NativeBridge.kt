@@ -1,22 +1,38 @@
 package app.sweepmeter
 
+import android.util.Base64
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import org.json.JSONObject
 
-/** JavaScript interface exposed as window.Native. */
+/** JavaScript interface exposed as window.Native. All callbacks go to window.on* handlers. */
 class NativeBridge(
     private val activity: MainActivity,
     private val webView: WebView,
     private val engine: MeasurementEngine,
-    private val tone: TonePlayer
+    private val generator: SignalGenerator,
+    private val live: LiveInput,
+    private val devices: AudioDevices
 ) {
 
     @JavascriptInterface
     fun info(): String = JSONObject()
         .put("sampleRate", engine.sampleRate)
         .put("source", engine.inputSource.label)
+        .put("version", activity.versionName)
         .toString()
+
+    @JavascriptInterface
+    fun devices(): String = devices.toJson().toString()
+
+    /** Device ids from devices(); 0 restores the system default. */
+    @JavascriptInterface
+    fun setDevices(inputId: Int, outputId: Int) {
+        devices.inputId = inputId
+        devices.outputId = outputId
+    }
 
     /** Plays the sweep and records. Returns "ok", "permission" or "busy". */
     @JavascriptInterface
@@ -39,22 +55,53 @@ class NativeBridge(
         engine.listen(durationSec.coerceIn(MIN_LISTEN_SEC, MAX_LISTEN_SEC), listener)
     }
 
-    /** Starts or retunes the continuous tone. [wobble] is a fraction (0.01 = ±1%). */
+    /** Streams microphone blocks to window.onLiveData(base64 float32). */
     @JavascriptInterface
-    fun tonePlay(frequency: Double, level: Double, wobble: Double) {
-        tone.play(frequency, level, wobble)
+    fun liveStart(): String {
+        if (!activity.hasMicPermission()) {
+            activity.runOnUiThread { activity.requestMicPermission() }
+            return "permission"
+        }
+        if (engine.isBusy) return "busy"
+        val started = live.start(
+            sink = { block -> callJs("onLiveData", "'${encode(block)}'") },
+            onError = { message -> callJs("onLiveError", JSONObject.quote(message)) }
+        )
+        if (started) activity.setKeepScreenOn(true)
+        return "ok"
+    }
+
+    @JavascriptInterface
+    fun liveStop() {
+        live.stop()
+        refreshKeepScreenOn()
+    }
+
+    /** Waveform: sine, square, triangle, sawtooth, white, pink. [wobble] is a fraction (0.01 = ±1%). */
+    @JavascriptInterface
+    fun genPlay(waveform: String, frequency: Double, level: Double, wobble: Double) {
+        generator.play(Oscillator.parse(waveform), frequency, level, wobble)
         activity.setKeepScreenOn(true)
     }
 
     @JavascriptInterface
-    fun toneStop() {
-        tone.stop()
-        activity.setKeepScreenOn(false)
+    fun genStop() {
+        generator.stop()
+        refreshKeepScreenOn()
     }
 
+    /** Shares a file whose content is given as base64. */
     @JavascriptInterface
-    fun shareCsv(fileName: String, content: String) {
-        activity.runOnUiThread { activity.shareCsv(fileName, content) }
+    fun shareFile(fileName: String, mimeType: String, base64: String) {
+        val bytes = Base64.decode(base64, Base64.DEFAULT)
+        activity.runOnUiThread { activity.shareFile(fileName, mimeType, bytes) }
+    }
+
+    /** Stops every audio activity (app going to background). */
+    fun stopAll() {
+        generator.stop()
+        live.stop()
+        callJs("onNativeStopped")
     }
 
     private fun startCapture(start: (MeasurementEngine.Listener) -> Boolean): String {
@@ -62,8 +109,12 @@ class NativeBridge(
             activity.runOnUiThread { activity.requestMicPermission() }
             return "permission"
         }
-        // Tone output would contaminate the recording.
-        tone.stop()
+        // Generator output or a second recorder would contaminate the capture.
+        generator.stop()
+        if (live.isRunning) {
+            live.stop()
+            callJs("onLiveStopped")
+        }
 
         val started = start(captureListener)
         if (started) activity.setKeepScreenOn(true)
@@ -75,15 +126,25 @@ class NativeBridge(
             callJs("onNativeProgress", fraction.toString(), levelDb.toString())
 
         override fun onComplete(sampleRate: Int, source: String) {
-            activity.setKeepScreenOn(false)
+            refreshKeepScreenOn()
             val meta = JSONObject().put("sampleRate", sampleRate).put("source", source)
             callJs("onNativeDone", meta.toString())
         }
 
         override fun onError(message: String) {
-            activity.setKeepScreenOn(false)
+            refreshKeepScreenOn()
             callJs("onNativeError", JSONObject.quote(message))
         }
+    }
+
+    private fun refreshKeepScreenOn() {
+        activity.setKeepScreenOn(generator.isPlaying || live.isRunning || engine.isBusy)
+    }
+
+    private fun encode(block: FloatArray): String {
+        val buffer = ByteBuffer.allocate(block.size * Float.SIZE_BYTES).order(ByteOrder.LITTLE_ENDIAN)
+        buffer.asFloatBuffer().put(block)
+        return Base64.encodeToString(buffer.array(), Base64.NO_WRAP)
     }
 
     /** Arguments must already be valid JavaScript literals. */
