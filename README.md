@@ -11,6 +11,11 @@ App Android que mede a resposta acústica de um ambiente e encontra suas frequê
 
 Interface e DSP ficam em `app/src/main/assets/index.html` (WebView servida por `WebViewAssetLoader`); captura e reprodução são nativas (`MeasurementEngine`). A gravação chega ao WebView em float32 pela rota `/rec/`.
 
+## Tocar a ressonância
+
+- **Gerador de tom:** toque em *Tocar* numa linha da tabela de picos (ou digite a frequência) para excitar o modo encontrado. Ajuste fino em passos de 0,1/1/10 Hz e varredura fina opcional (±0,2%, ±1%, ±3%, ciclo de 8 s) para acertar ressonâncias estreitas. Ao parar, o ambiente continua soando.
+- **Taça de cristal:** *Ouvir batida* grava 4 s; ao bater na borda, o app mede a frequência fundamental (FFT com zero-padding e interpolação parabólica, precisão < 0,1 Hz), o Q e o T60 pelo decaimento do envelope (Goertzel). *Tocar na taça* inicia o tom nessa frequência.
+
 ## Dicas de medição
 
 - O alto-falante do celular reproduz pouco abaixo de 200–300 Hz. Para modos de sala (20–200 Hz), use uma caixa externa (P2, USB ou Bluetooth).

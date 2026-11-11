@@ -26,6 +26,7 @@ class MainActivity : Activity() {
 
     private lateinit var webView: WebView
     private lateinit var engine: MeasurementEngine
+    private lateinit var tone: TonePlayer
     private lateinit var assetLoader: WebViewAssetLoader
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -34,6 +35,7 @@ class MainActivity : Activity() {
         volumeControlStream = AudioManager.STREAM_MUSIC
 
         engine = MeasurementEngine(this)
+        tone = TonePlayer(engine.sampleRate)
         assetLoader = WebViewAssetLoader.Builder()
             .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
             .addPathHandler("/rec/", RecordingPathHandler(engine))
@@ -45,7 +47,7 @@ class MainActivity : Activity() {
             settings.allowFileAccess = false
             settings.allowContentAccess = false
             webViewClient = AppWebViewClient()
-            addJavascriptInterface(NativeBridge(this@MainActivity, this, engine), "Native")
+            addJavascriptInterface(NativeBridge(this@MainActivity, this, engine, tone), "Native")
         }
 
         val root = FrameLayout(this).apply { addView(webView) }
@@ -56,7 +58,15 @@ class MainActivity : Activity() {
         if (!hasMicPermission()) requestMicPermission()
     }
 
+    // Never keep a tone running in the background.
+    override fun onPause() {
+        tone.stop()
+        webView.evaluateJavascript("window.onNativeToneStopped && window.onNativeToneStopped()", null)
+        super.onPause()
+    }
+
     override fun onDestroy() {
+        tone.stop()
         webView.destroy()
         super.onDestroy()
     }

@@ -62,15 +62,24 @@ class MeasurementEngine(context: Context) {
             }
         }
 
-    /** Returns false when a measurement is already in progress. */
-    fun start(params: Params, listener: Listener): Boolean {
+    /** Plays the sweep while recording. Returns false when a capture is already in progress. */
+    fun start(params: Params, listener: Listener): Boolean = launch(listener) { sr ->
+        val playback = buildPlayback(params, sr)
+        capture(playback, playback.size + (RECORD_MARGIN_SEC * sr).roundToInt(), sr, listener)
+    }
+
+    /** Records only (e.g. a tapped glass). Returns false when a capture is already in progress. */
+    fun listen(durationSec: Double, listener: Listener): Boolean = launch(listener) { sr ->
+        capture(FloatArray(0), (durationSec * sr).roundToInt(), sr, listener)
+    }
+
+    private fun launch(listener: Listener, block: (Int) -> FloatArray): Boolean {
         if (!running.compareAndSet(false, true)) return false
-        thread(name = "measurement") {
+        thread(name = "capture") {
             try {
                 val sr = sampleRate
-                val source = inputSource
-                lastRecording = capture(params, sr, source, listener)
-                listener.onComplete(sr, source.label)
+                lastRecording = block(sr)
+                listener.onComplete(sr, inputSource.label)
             } catch (e: Exception) {
                 listener.onError(e.message ?: e.javaClass.simpleName)
             } finally {
@@ -81,12 +90,9 @@ class MeasurementEngine(context: Context) {
     }
 
     @SuppressLint("MissingPermission") // Checked by the caller before start().
-    private fun capture(p: Params, sr: Int, source: InputSource, listener: Listener): FloatArray {
-        val playback = buildPlayback(p, sr)
-        val recordLength = playback.size + (RECORD_MARGIN_SEC * sr).roundToInt()
-
-        val recorder = createRecorder(sr, source.id)
-        val track = createTrack(sr)
+    private fun capture(playback: FloatArray, recordLength: Int, sr: Int, listener: Listener): FloatArray {
+        val recorder = createRecorder(sr, inputSource.id)
+        val track = if (playback.isNotEmpty()) createTrack(sr) else null
         val recording = FloatArray(recordLength)
         var player: Thread? = null
 
@@ -97,7 +103,7 @@ class MeasurementEngine(context: Context) {
             }
 
             // Playback starts after recording, so the capture always holds the full sweep.
-            player = thread(name = "playback") { play(track, playback) }
+            if (track != null) player = thread(name = "playback") { play(track, playback) }
 
             var offset = 0
             var lastPost = 0L
@@ -124,9 +130,9 @@ class MeasurementEngine(context: Context) {
         } finally {
             runCatching { recorder.stop() }
             recorder.release()
-            runCatching { track.stop() }
+            runCatching { track?.stop() }
             player?.join(JOIN_TIMEOUT_MS)
-            track.release()
+            track?.release()
         }
         return recording
     }

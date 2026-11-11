@@ -36,7 +36,7 @@ body {
   padding-right: max(16px, env(safe-area-inset-right, 0px));
   padding-block: calc(16px + env(safe-area-inset-top, 0px)) calc(32px + env(safe-area-inset-bottom, 0px));
 }
-.wrap { max-width: 760px; margin: 0 auto; display: grid; gap: 20px; }
+.wrap { max-width: 760px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; }
 header h1 { font: 700 1.5rem/1.15 var(--f-display); margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
 header p { margin: 4px 0 0; color: var(--muted); font-size: 0.9rem; }
 .label { font: 500 0.7rem/1.2 var(--f-body); text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
@@ -90,6 +90,20 @@ summary { font: 600 0.95rem var(--f-display); cursor: pointer; }
 .check { display: inline-flex; gap: 6px; align-items: center; font-size: 0.9rem; }
 .note { color: var(--muted); font-size: 0.85rem; margin: 8px 0 0; max-width: 65ch; }
 ul.tips { margin: 10px 0 0; padding-left: 18px; color: var(--muted); font-size: 0.9rem; display: grid; gap: 4px; max-width: 65ch; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: grid; gap: 14px; }
+.tone-row { display: flex; align-items: center; gap: 8px; }
+.tone-row input { flex: 1; min-width: 0; text-align: center; font: 500 1.8rem/1 var(--f-mono); padding: 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); }
+.tone-row .unit { font: 500 1rem var(--f-mono); color: var(--muted); }
+.tone-row .btn { min-width: 48px; padding: 10px 0; font-size: 1.2rem; }
+.btn.playing { background: var(--mode); border-color: var(--mode); color: var(--accent-fg); }
+.controls { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
+.field input[type="range"] { padding: 0; border: 0; background: transparent; accent-color: var(--accent); }
+td .play { font: 500 0.8rem var(--f-body); padding: 4px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); cursor: pointer; }
+ol.steps { margin: 0; padding-left: 20px; color: var(--muted); font-size: 0.9rem; display: grid; gap: 4px; max-width: 65ch; }
+.glass-result { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.glass-result .val { font: 500 2.2rem/1 var(--f-mono); letter-spacing: -0.02em; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font: 400 0.8rem var(--f-mono); padding: 3px 8px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); }
 @media (prefers-reduced-motion: reduce) { .bar > i { transition: none; } }
 </style>
 </head>
@@ -149,10 +163,49 @@ ul.tips { margin: 10px 0 0; padding-left: 18px; color: var(--muted); font-size: 
     <div class="label" style="margin-bottom:6px">Picos detectados</div>
     <div class="tbl">
       <table>
-        <thead><tr><th>#</th><th>Frequência</th><th>Nível</th><th>Proeminência</th><th>Q</th><th>Modo axial</th></tr></thead>
+        <thead><tr><th>#</th><th>Frequência</th><th>Nível</th><th>Proeminência</th><th>Q</th><th>Modo axial</th><th></th></tr></thead>
         <tbody id="peaksBody"></tbody>
       </table>
     </div>
+  </section>
+
+  <section class="panel" id="toneSec">
+    <span class="label">Tocar frequência</span>
+    <div class="tone-row">
+      <button type="button" class="btn" id="fDown" aria-label="Diminuir frequência">−</button>
+      <input id="toneF" type="number" inputmode="decimal" step="0.1" min="10" max="20000" value="100" aria-label="Frequência do tom em Hz">
+      <span class="unit">Hz</span>
+      <button type="button" class="btn" id="fUp" aria-label="Aumentar frequência">+</button>
+    </div>
+    <div class="controls">
+      <label class="field"><span class="label">Passo</span>
+        <select id="toneStep"><option value="0.1">0,1 Hz</option><option value="1" selected>1 Hz</option><option value="10">10 Hz</option></select>
+      </label>
+      <label class="field"><span class="label">Varredura fina</span>
+        <select id="toneWob"><option value="0">Desligada</option><option value="0.002">±0,2%</option><option value="0.01">±1%</option><option value="0.03">±3%</option></select>
+      </label>
+      <label class="field"><span class="label">Volume <span id="toneLvlVal" class="mono">50%</span></span>
+        <input id="toneLvl" type="range" min="5" max="100" step="5" value="50">
+      </label>
+    </div>
+    <button type="button" class="btn primary" id="toneBtn">Tocar</button>
+    <p class="note" style="margin:0">Toque em <b>Tocar</b> numa linha da tabela para usar a frequência do pico. Ao parar o tom, escute o ambiente continuar soando. A varredura fina oscila a frequência em torno do valor (ciclo de 8 s) para acertar ressonâncias muito estreitas.</p>
+  </section>
+
+  <section class="panel" id="glassSec">
+    <span class="label">Taça de cristal</span>
+    <ol class="steps">
+      <li>Segure a taça pela haste, a uns 10 cm do microfone do celular.</li>
+      <li>Toque em <b>Ouvir batida</b> e bata de leve na borda com a unha ou uma colher.</li>
+      <li>Toque em <b>Tocar na taça</b> e aproxime o alto-falante da borda. Use a varredura fina ±0,2% para achar o ponto exato.</li>
+    </ol>
+    <button type="button" class="btn" id="glassBtn">Ouvir batida</button>
+    <div id="glassOut" hidden>
+      <div class="glass-result"><span class="val" id="gF">—</span><span class="unit mono">Hz</span><span class="sub mono" id="gSub" style="color:var(--muted);font-size:0.85rem"></span></div>
+      <div class="chips" id="gPartials" style="margin-top:10px"></div>
+      <button type="button" class="btn small" id="glassUse" style="margin-top:12px">Tocar na taça</button>
+    </div>
+    <p class="note" style="margin:0">O alto-falante do celular faz a taça vibrar por simpatia, e dá para ouvi-la cantar quando o tom para. Para quebrar uma taça seria preciso mais de 100 dB exatamente na frequência dela, muito além do que um celular produz.</p>
   </section>
 
   <details>
@@ -450,6 +503,7 @@ async function openWebSession() {
     sampleRate: ctx.sampleRate,
     source: "Navegador",
     capture: (p, sweep, onTick) => captureRun(ctx, stream, sweep, p.level, onTick),
+    listen: (sec, onTick) => captureRun(ctx, stream, new Float32Array(Math.round(sec * ctx.sampleRate)), 0, onTick),
     close: () => stream.getTracks().forEach(t => t.stop()),
   };
 }
@@ -460,12 +514,14 @@ function openNativeSession() {
   return {
     sampleRate: info.sampleRate,
     source: info.source,
-    capture: (p, _sweep, onTick) => captureNative(p, onTick),
+    capture: (p, _sweep, onTick) => nativeCapture(() => NATIVE.measure(JSON.stringify({ ...p, preRoll: PRE_ROLL, tail: TAIL })), onTick),
+    listen: (sec, onTick) => nativeCapture(() => NATIVE.listen(sec), onTick),
     close: () => {},
   };
 }
 
-function captureNative(p, onTick) {
+// Runs one native capture; start() returns the bridge status string.
+function nativeCapture(start, onTick) {
   return new Promise((resolve, reject) => {
     window.onNativeProgress = (frac, levelDb) => onTick(frac, levelDb);
     window.onNativeError = msg => reject(new Error(msg));
@@ -476,7 +532,7 @@ function captureNative(p, onTick) {
         resolve(new Float32Array(await r.arrayBuffer()));
       } catch (e) { reject(e); }
     };
-    const status = NATIVE.measure(JSON.stringify({ ...p, preRoll: PRE_ROLL, tail: TAIL }));
+    const status = start();
     if (status === "permission") reject(Object.assign(new Error("permission"), { name: "NotAllowedError" }));
     else if (status !== "ok") reject(new Error("Medição já em andamento."));
   });
@@ -538,6 +594,7 @@ async function measure() {
   const level = Math.min(1, Math.max(0.05, num("#level", 70) / 100));
   const winSec = parseFloat($("#win").value);
 
+  toneStop();
   const btn = $("#runBtn"); btn.disabled = true;
   let session;
   try {
@@ -646,7 +703,7 @@ function renderTable() {
   const body = $("#peaksBody"), modes = axialModes(Math.max(500, num("#pHi", 500)));
   body.textContent = "";
   if (!state.peaks.length) {
-    const tr = body.insertRow(), td = tr.insertCell(); td.colSpan = 6; td.className = "empty"; td.textContent = "Nenhum pico com proeminência ≥ 3 dB.";
+    const tr = body.insertRow(), td = tr.insertCell(); td.colSpan = 7; td.className = "empty"; td.textContent = "Nenhum pico com proeminência ≥ 3 dB.";
     return;
   }
   state.peaks.forEach((p, i) => {
@@ -654,6 +711,10 @@ function renderTable() {
     [String(i + 1), fmt(p.f, 1) + " Hz", fmt(p.db, 1) + " dB", "+" + fmt(p.prom, 1) + " dB",
      p.q ? fmt(p.q, 1) : "—", m ? `${m.tag} (${fmt(m.f, 0)} Hz)` : "—"]
       .forEach(t => { tr.insertCell().textContent = t; });
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "play"; b.textContent = "Tocar";
+    b.addEventListener("click", () => playAt(p.f));
+    tr.insertCell().appendChild(b);
   });
 }
 
@@ -757,6 +818,174 @@ function hoverAt(clientX) {
   draw();
 }
 
+/* ---------- Tone generator ---------- */
+const WOBBLE_PERIOD = 8; // s, matches TonePlayer.kt
+const tone = { playing: false, web: null };
+
+function toneParams() {
+  return {
+    f: Math.min(20000, Math.max(10, num("#toneF", 100))),
+    level: num("#toneLvl", 50) / 100,
+    wobble: parseFloat($("#toneWob").value) || 0,
+  };
+}
+
+async function toneApply() {
+  if (!tone.playing) return;
+  const p = toneParams();
+  if (NATIVE) { NATIVE.tonePlay(p.f, p.level, p.wobble); return; }
+  const ctx = await ensureAudio(), t = ctx.currentTime;
+  if (!tone.web) {
+    const osc = ctx.createOscillator(), gain = ctx.createGain();
+    const lfo = ctx.createOscillator(), depth = ctx.createGain();
+    lfo.frequency.value = 1 / WOBBLE_PERIOD;
+    lfo.connect(depth); depth.connect(osc.frequency);
+    gain.gain.value = 0;
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.start(); lfo.start();
+    tone.web = { osc, gain, lfo, depth };
+  }
+  const w = tone.web;
+  w.osc.frequency.setTargetAtTime(p.f, t, 0.03);
+  w.depth.gain.setTargetAtTime(p.f * p.wobble, t, 0.03);
+  w.gain.gain.setTargetAtTime(p.level, t, 0.03);
+}
+
+function toneStop() {
+  if (!tone.playing) return;
+  tone.playing = false;
+  if (NATIVE) NATIVE.toneStop();
+  else if (tone.web) {
+    const w = tone.web, ctx = state.ctx;
+    tone.web = null;
+    w.gain.gain.setTargetAtTime(0, ctx.currentTime, 0.03);
+    setTimeout(() => { w.osc.stop(); w.lfo.stop(); w.gain.disconnect(); }, 300);
+  }
+  renderToneBtn();
+}
+
+function toneStart() {
+  tone.playing = true;
+  renderToneBtn();
+  toneApply().catch(e => { tone.playing = false; renderToneBtn(); setStatus("Falha ao tocar: " + e.message, "err"); });
+}
+
+function renderToneBtn() {
+  const b = $("#toneBtn");
+  b.textContent = tone.playing ? "Parar" : "Tocar";
+  b.classList.toggle("playing", tone.playing);
+}
+
+function setToneFreq(f) {
+  $("#toneF").value = (Math.round(f * 10) / 10).toFixed(1);
+  toneApply();
+}
+
+function playAt(f) {
+  setToneFreq(f);
+  if (!tone.playing) toneStart();
+  $("#toneSec").scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "center" });
+}
+
+// Called by the app when it goes to background.
+window.onNativeToneStopped = () => { tone.playing = false; renderToneBtn(); };
+
+/* ---------- Glass tap analysis ---------- */
+const LISTEN_SEC = 4;
+
+// Single-bin DFT magnitude (Goertzel) over x[a, b).
+function goertzel(x, a, b, f, sr) {
+  const w = 2 * Math.PI * f / sr, c = 2 * Math.cos(w);
+  let s1 = 0, s2 = 0;
+  for (let i = a; i < b; i++) { const s0 = x[i] + c * s1 - s2; s2 = s1; s1 = s0; }
+  return Math.sqrt(Math.max(0, s1 * s1 + s2 * s2 - c * s1 * s2)) / (b - a);
+}
+
+// Finds the dominant ringing mode of a tapped object and its decay.
+function analyzeTap(rec, sr) {
+  let pk = 0, pv = 0;
+  for (let i = 0; i < rec.length; i++) { const a = Math.abs(rec[i]); if (a > pv) { pv = a; pk = i; } }
+  if (pv < 0.01) throw new Error("Nenhuma batida detectada. Bata mais forte ou aproxime a taça.");
+
+  const start = pk + Math.round(0.01 * sr);            // skip the impact transient
+  const len = Math.min(rec.length - start, Math.round(2.5 * sr));
+  if (len < 0.3 * sr) throw new Error("Batida muito no fim da gravação. Bata logo após tocar em Ouvir batida.");
+
+  // High-resolution spectrum: zero-padded FFT with a short taper at the end.
+  const N = 1 << 19, re = new Float64Array(N), im = new Float64Array(N), taper = Math.round(len * 0.2);
+  for (let i = 0; i < len; i++) {
+    const g = i > len - taper ? 0.5 + 0.5 * Math.cos(Math.PI * (i - (len - taper)) / taper) : 1;
+    re[i] = rec[start + i] * g;
+  }
+  fft(re, im);
+  const df = sr / N, kLo = Math.ceil(200 / df), kHi = Math.min(N / 2 - 1, Math.floor(10000 / df));
+  const mag = k => Math.hypot(re[k], im[k]);
+
+  // Spectral peaks, strongest first, at least 3% apart.
+  const cands = [];
+  for (let k = kLo + 1; k < kHi; k++) {
+    const m = mag(k);
+    if (m > mag(k - 1) && m >= mag(k + 1)) cands.push({ k, m });
+  }
+  cands.sort((a, b) => b.m - a.m);
+  const peaks = [];
+  for (const c of cands) {
+    if (c.m < cands[0].m * 0.1 || peaks.length >= 5) break;
+    // Parabolic interpolation on log magnitude.
+    const a = Math.log(mag(c.k - 1)), b = Math.log(c.m), g = Math.log(mag(c.k + 1));
+    const f = (c.k + 0.5 * (a - g) / (a - 2 * b + g)) * df;
+    if (peaks.every(p => Math.abs(p.f - f) / p.f > 0.03)) peaks.push({ f, db: 20 * Math.log10(c.m / cands[0].m) });
+  }
+  const f0 = peaks[0].f;
+
+  // Decay rate from the Goertzel envelope at f0 (20 ms blocks), fitted until 40 dB down.
+  const blk = Math.round(0.02 * sr), env = [];
+  for (let a = start; a + blk <= start + len; a += blk) env.push(20 * Math.log10(goertzel(rec, a, a + blk, f0, sr) + 1e-12));
+  const fit = [];
+  for (let i = 0; i < env.length && env[i] > env[0] - 40; i++) fit.push([i * blk / sr, env[i]]);
+  let slope = NaN;
+  if (fit.length >= 5) {
+    const n = fit.length, mx = fit.reduce((s, p) => s + p[0], 0) / n, my = fit.reduce((s, p) => s + p[1], 0) / n;
+    let sxy = 0, sxx = 0;
+    for (const [x, y] of fit) { sxy += (x - mx) * (y - my); sxx += (x - mx) * (x - mx); }
+    slope = sxy / sxx; // dB/s
+  }
+  const tau = slope < 0 ? 20 * Math.LOG10E / -slope : NaN;
+  return { f0, peaks, q: Math.PI * f0 * tau, t60: slope < 0 ? 60 / -slope : NaN, level: dbfs(pv) };
+}
+
+async function listenGlass() {
+  toneStop();
+  const btn = $("#glassBtn");
+  btn.disabled = true; btn.textContent = "Ouvindo… bata na taça";
+  let session;
+  try {
+    session = NATIVE ? openNativeSession() : await openWebSession();
+    const rec = await session.listen(LISTEN_SEC, (p, levelDb) => {
+      $("#lvlBar").style.width = Math.max(0, Math.min(100, (levelDb + 60) / 60 * 100)) + "%";
+    });
+    const r = analyzeTap(rec, session.sampleRate);
+    state.glass = r;
+    $("#glassOut").hidden = false;
+    $("#gF").textContent = fmt(r.f0, 1);
+    $("#gSub").textContent = (Number.isFinite(r.q) ? `Q ≈ ${fmt(r.q, 0)} · ` : "") +
+      (Number.isFinite(r.t60) ? `decai 60 dB em ${fmt(r.t60, 1)} s` : "decaimento não medido");
+    const chips = $("#gPartials"); chips.textContent = "";
+    r.peaks.slice(1).forEach(p => {
+      const c = document.createElement("span");
+      c.className = "chip"; c.textContent = `${fmt(p.f, 0)} Hz (${fmt(p.db, 0)} dB)`;
+      chips.appendChild(c);
+    });
+  } catch (e) {
+    const denied = e && (e.name === "NotAllowedError" || e.name === "SecurityError");
+    setStatus(denied ? "Permita o uso do microfone e tente de novo." : e.message, "err");
+  } finally {
+    session?.close();
+    btn.disabled = false; btn.textContent = "Ouvir batida";
+    $("#lvlBar").style.width = "0%";
+  }
+}
+
 /* ---------- CSV export ---------- */
 function exportCsv() {
   if (!state.raw) return;
@@ -806,8 +1035,18 @@ matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
 new MutationObserver(draw).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
 document.fonts?.ready.then(draw);
 
+$("#toneBtn").addEventListener("click", () => tone.playing ? toneStop() : toneStart());
+$("#toneF").addEventListener("input", toneApply);
+$("#toneWob").addEventListener("change", toneApply);
+$("#toneLvl").addEventListener("input", () => { $("#toneLvlVal").textContent = $("#toneLvl").value + "%"; toneApply(); });
+$("#fDown").addEventListener("click", () => setToneFreq(toneParams().f - parseFloat($("#toneStep").value)));
+$("#fUp").addEventListener("click", () => setToneFreq(toneParams().f + parseFloat($("#toneStep").value)));
+$("#glassBtn").addEventListener("click", listenGlass);
+$("#glassUse").addEventListener("click", () => state.glass && playAt(state.glass.f0));
+
 updateRefInfo();
 recompute();
+if (state.peaks?.[0]) $("#toneF").value = state.peaks[0].f.toFixed(1);
 </script>
 </body>
 </html>
