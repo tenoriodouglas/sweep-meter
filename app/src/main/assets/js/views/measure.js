@@ -91,7 +91,7 @@ function extra(html) { $("#mExtra", root).innerHTML = html; }
 function legend(items) {
   $("#mLegend", root).innerHTML = items.map(([c, t]) => `<span><i style="background:var(${c})"></i>${t}</span>`).join("");
 }
-function showWater(on) { $("#mPlot", root).hidden = on; $("#mWater", root).hidden = !on; }
+function showWater(on) { $("#mPlot", root).hidden = on; $("#mWater", root).hidden = !on; $("#mLegend", root).hidden = false; }
 
 function renderResp() {
   showWater(false);
@@ -113,7 +113,7 @@ function renderResp() {
   const curve = A.response(m(), { ref: hasRef && ui.useRef ? reference : null });
   const top = Math.ceil((d.maxIn(curve, 20, 20000) + 3) / 5) * 5;
   const pk = A.peaks(m());
-  const modes = settings.get("roomExample") ? [] : d.roomModes(settings.get("roomL"), settings.get("roomW"), settings.get("roomH"), RANGES[ui.range][1], d.speedOfSound(settings.get("temp"))).filter(x => x.type === "axial");
+  const modes = settings.get("roomExample") ? [] : d.axialModes(settings.get("roomL"), settings.get("roomW"), settings.get("roomH"), Math.min(300, RANGES[ui.range][1]), d.speedOfSound(settings.get("temp")));
   plot.set({
     xType: "log", x: RANGES[ui.range], y: [top - 50, top], yStep: 10, fmtY: v => `${fmt(v, 1)} dB`,
     series: [{ y: curve, color: "--accent", fill: true, label: "" }],
@@ -280,10 +280,8 @@ function renderEq() {
 }
 
 function unavailable(msg) {
-  showWater(false);
+  $("#mPlot", root).hidden = true; $("#mWater", root).hidden = true; $("#mLegend", root).hidden = true;
   tools("");
-  plot.set({ series: [], markers: [] });
-  legend([]);
   extra(`<p class="note">${msg}</p>`);
 }
 

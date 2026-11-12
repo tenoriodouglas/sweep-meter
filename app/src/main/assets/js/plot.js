@@ -138,15 +138,19 @@ export class Plot {
       else if (s.y) this._line(g, s, pw, ph);
     }
 
+    let lastLabelX = -Infinity;
     for (const m of this.markers) {
       if (m.x < xa || m.x > xb) continue;
       const x = this.X(m.x);
+      // Skip vertical-marker labels that would collide with the previous one.
+      const showLabel = m.label && (m.y !== undefined || x - lastLabelX > 26);
+      if (showLabel && m.y === undefined) lastLabelX = x;
       g.strokeStyle = color(m.color || "--mode"); g.fillStyle = g.strokeStyle;
       if (m.y === undefined) {
         g.setLineDash([3, 3]); g.globalAlpha = 0.7;
         g.beginPath(); g.moveTo(x, pad.t); g.lineTo(x, pad.t + ph); g.stroke();
         g.setLineDash([]); g.globalAlpha = 1;
-        if (m.label) { g.textAlign = "center"; g.fillText(m.label, x, pad.t + ph - 4); }
+        if (showLabel) { g.textAlign = "center"; g.fillText(m.label, x, pad.t + ph - 4); }
       } else {
         const y = this.Y(m.y);
         g.fillStyle = C.panel; g.lineWidth = 1.5;

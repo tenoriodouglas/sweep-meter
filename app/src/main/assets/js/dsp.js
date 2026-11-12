@@ -310,11 +310,23 @@ export function decayAnalysis(x, sr) {
   };
 }
 
-/** Broadband and octave-band decay analysis from a stored IR. */
-export function roomAcoustics(ir, peak, sr, maxSec = 3) {
+/** Broadband and octave-band decay analysis: one forward FFT, one inverse per band. */
+export function roomAcoustics(ir, peak, sr, maxSec = 2.5) {
   const start = Math.max(0, peak - Math.round(0.001 * sr));
   const seg = ir.subarray(start, Math.min(ir.length, start + Math.round(maxSec * sr)));
-  const bands = OCTAVES.filter(fc => fc < sr * 0.35).map(fc => ({ fc, ...decayAnalysis(bandFilter(seg, sr, fc), sr) }));
+  const N = nextPow2(seg.length + Math.round(0.25 * sr)), Re = new Float64Array(N), Im = new Float64Array(N);
+  Re.set(seg);
+  fft(Re, Im);
+  const bw = 2 ** 0.5 - 2 ** -0.5, re = new Float64Array(N), im = new Float64Array(N);
+  const bands = OCTAVES.filter(fc => fc < sr * 0.35).map(fc => {
+    for (let k = 0; k <= N / 2; k++) {
+      const f = Math.max(k, 1e-3) * sr / N, g = 1 / Math.sqrt(1 + ((f / fc - fc / f) / bw) ** 6);
+      re[k] = Re[k] * g; im[k] = Im[k] * g;
+      if (k > 0 && k < N / 2) { re[N - k] = Re[N - k] * g; im[N - k] = Im[N - k] * g; }
+    }
+    fft(re, im, true);
+    return { fc, ...decayAnalysis(re.slice(0, seg.length), sr) };
+  });
   return { broadband: decayAnalysis(seg, sr), bands };
 }
 
@@ -565,6 +577,15 @@ export function roomModes(L, W, H, fmax, c = 343) {
     modes.push({ f, n: [p, q, r], type: nz === 1 ? "axial" : nz === 2 ? "tangential" : "oblique" });
   }
   return modes.sort((a, b) => a.f - b.f);
+}
+
+/** Axial modes only (cheap): n·c/2D for each dimension. */
+export function axialModes(L, W, H, fmax, c = 343) {
+  const out = [];
+  [L, W, H].forEach((D, axis) => {
+    for (let n = 1; n * c / (2 * D) <= fmax; n++) out.push({ f: n * c / (2 * D), n: [0, 0, 0].map((_, i) => (i === axis ? n : 0)), type: "axial" });
+  });
+  return out.sort((a, b) => a.f - b.f);
 }
 
 export const schroederFreq = (rt60, volume) => 2000 * Math.sqrt(rt60 / volume);

@@ -24,7 +24,7 @@ android {
         targetSdk = libs.versions.androidTargetSdk.get().toInt()
         // CI sets VERSION_CODE = run number, so every build is unique and increasing.
         versionCode = secret("VERSION_CODE")?.toIntOrNull() ?: 1
-        versionName = "0.1.0"
+        versionName = "0.2.0"
     }
 
     signingConfigs {
