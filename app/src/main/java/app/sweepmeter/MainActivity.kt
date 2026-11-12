@@ -127,18 +127,13 @@ class MainActivity : Activity() {
         }
     }
 
-    /** Back walks the in-app (hash) history before leaving. */
+    /** Back walks the in-app (hash) history before leaving (Android 13+; older versions just close). */
     private fun registerBackNavigation() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             onBackInvokedDispatcher.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT) {
                 if (webView.canGoBack()) webView.goBack() else finish()
             }
         }
-    }
-
-    @Deprecated("Used only below Android 13")
-    override fun onBackPressed() {
-        if (webView.canGoBack()) webView.goBack() else super.onBackPressed()
     }
 
     /** Pads content so it stays clear of status/navigation bars (edge-to-edge on API 35+). */

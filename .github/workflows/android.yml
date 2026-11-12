@@ -77,7 +77,7 @@ jobs:
         run: |
           python3 - <<'PY'
           import glob, xml.etree.ElementTree as ET
-          for f in glob.glob("**/build/reports/lint-results*.xml", recursive=True):
+          for f in glob.glob("**/build/**/lint-results*.xml", recursive=True):
               for issue in ET.parse(f).getroot().iter("issue"):
                   if issue.get("severity") not in ("Error", "Fatal"):
                       continue

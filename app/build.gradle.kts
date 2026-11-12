@@ -67,7 +67,6 @@ android {
     lint {
         warningsAsErrors = false
         abortOnError = true
-        xmlReport = true
     }
 }
 
